@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset='utf-8'>
+  <meta http-equiv='X-UA-Compatible' content='IE=edge'>
+  <title>Page Title</title>
+  <meta name='viewport' content='width=device-width, initial-scale=1'>
+  <script>
+    // executor  function(resolve, reject) { }   );
+    const PENDING = 'pending';
+    const RESOLVED = 'resolved';
+    const REJECTED = 'rejected';
+
+    function MyPromise(executor) {
+      const self = this;
+      self.status = PENDING;
+      self.data = null;
+      self.callbacks = []; //{onResolve,onReject}
+
+      function resolve(val) {
+        if (self.status !== PENDING)
+          return;
+        self.status = RESOLVED;
+        self.data = val;
+        if (self.callbacks.length > 0) {
+          setTimeout(() => {
+            self.callbacks[0].onResolve(val);
+          }, 100);
+        }
+      }
+      function reject(reason) {
+        if (self.status !== PENDING)
+          return;
+        self.status = REJECTED;
+        self.data = reason;
+        if (self.callbacks.length > 0) {
+          setTimeout(() => {
+            self.callbacks[0].onReject(reason);
+          }, 100);
+        }
+      }
+
+      try {
+        console.log('1: excutor run')
+        executor(resolve, reject);
+      } catch (error) {
+        reject(error);
+      }
+    }
+
+    /**
+     *
+     * @param {*} onResolve
+     * @param {*} onReject
+     * then 方法是同步执行的，传入成功和失败的回调，返回一个新的Promise
+     */
+    MyPromise.prototype.then = function (onResolve, onReject) {
+      console.log('2: then run')
+      const self = this;
+
+      //正常返回传透，如果未定义onResolve,使用默认的回调向后传递返回值
+      onResolve = typeof onResolve !== 'function' ? value => { return value } : onResolve
+
+      //异常传透，如果未定义onReject,使用默认的回调向后传递错误
+      onReject = typeof onReject !== 'function' ? reason => { throw reason } : onReject
+
+      return new MyPromise((res, rej) => {
+        console.log('new promise excutor run')
+
+        function handle(callback) {
+          /**
+        * 1:result is normal value, return success promise
+        * 2:result is promise, return  as new promise'result
+        * 3: error catched, return fail promise
+        */
+          try {
+            const result = callback(self.data);
+            if (result instanceof MyPromise) {
+              result.then(
+                (val) => {
+                  res(val);
+                },
+                (reason) => {
+                  rej(reason);
+                }
+              );
+            } else {
+              res(result);
+            }
+          } catch (error) {
+            rej(error);
+          }
+
+        }
+
+        if (self.status === PENDING) { //先指定异步回调函数,保存回调函数
+          console.log('add callback')
+          self.callbacks.push({
+            onResolve(value) {
+              handle(onResolve);
+            },
+            onReject(reason) {
+              handle(onReject);
+            }
+          })
+        } else if (self.status === RESOLVED) { // 后添加异步回调函数, 如果状态为Resolved状态，异步执行onResolved回调函数
+          setTimeout(() => {
+            handle(onResolve);
+          }, 0);
+        } else if (self.status === REJECTED) { //如果状态为Rejected状态，异步执行onReject回调函数
+          setTimeout(() => {
+            handle(onReject);
+          }, 0);
+        }
+      })
+    };
+
+    MyPromise.prototype.catch = function (onRejected) {
+      return this.then(null, onRejected);
+    };
+    //MyPromise.resolve(1)
+    //MyPromise.resolve(MyPromise.resolve(1))
+    //MyPromise.resolve(MyPromise.reject(1))
+    MyPromise.resolve = function (val) {
+      return new MyPromise((res, rej) => {
+        // val is promise
+        // val is not promise
+        if (val instanceof MyPromise) {
+          val.then(res, rej)
+        } else {
+          res(val);
+        }
+      })
+
+
+    };
+    MyPromise.reject = function (reason) {
+      return new MyPromise((res, rej) => {
+        rej(reason);
+      })
+    };
+    MyPromise.Race = function (promises) {
+      return new MyPromise((res, rej) => {
+        promises.forEach(p => {
+          p.then(res, rej)
+        });
+      })
+
+    };
+
+    // case 1: 先指定回调
+
+    // var p = new MyPromise(function (res, rej) {
+
+    //   setTimeout(() => {
+    //     console.log('asyn function completed')
+
+    //     res('a');
+    //   }, 1000);
+    // }).then(
+    //   (val1) => {
+    //     console.log(val1);
+    //   },
+    //   (reason1) => {
+    //     console.log(reason1);
+    //   }
+    // )
+
+
+    // case 2: 后指定回调
+    // var p = new MyPromise(function (res, rej) {
+    //   console.log('run sync  function');
+
+    //   res('a');
+
+    // });
+    // p.then(
+    //   (val1) => {
+    //     console.log(val1);
+    //   },
+    //   (reason1) => {
+
+    //    }
+    // );
+
+
+    // case 3: 成功 or 失败
+    // var p = new MyPromise(function (res, rej) {
+    //   console.log('run sync  function');
+    //   setTimeout(() => {
+    //     res('ok');
+    //     //rej('error');
+    //   }, 2000);
+
+    // });
+    // p.then(
+    //   (val1) => {
+    //     console.log('success:' + val1);
+    //     console.log(p)
+    //   },
+    //   (reason1) => {
+    //     console.log('reject:' + reason1);
+    //     console.log(p)
+    //   }
+    // );
+
+    // case 4: 链式调用
+    // console.log('链式调用')
+    // var p4 = new MyPromise(function (res, rej) {
+    //   setTimeout(() => {
+    //     //res('1');
+    //     rej('error');
+    //   }, 1000);
+
+    // }).then(
+    //   (val1) => {
+    //     console.log('success:' + val1);
+    //     return 2
+    //   },
+    //   (reason1) => {
+    //     console.log('reject:' + reason1);
+    //     throw 2
+    //   }
+    // ).then(
+    //   (val1) => {
+    //     console.log('success:' + val1);
+    //   },
+    //   (reason1) => {
+    //     console.log('reject:' + reason1);
+    //   }
+    // );
+
+    //case 5 
+    // const p5 = MyPromise.resolve(5);
+    // console.log(p5);
+    //case 6
+    // const p6 = MyPromise.reject(6);
+    // console.log(p6);
+
+    //case 7 catch test
+
+    // console.log('catch test')
+    // var p7 = new MyPromise(function (res, rej) {
+    //   setTimeout(() => {
+    //     res('1');
+    //   }, 1000);
+
+    // }).then(
+    //   (val1) => {
+    //     console.log('success:' + val1);
+    //     throw 2
+    //   },
+    //   (reason1) => {
+    //     console.log('reject:' + reason1);
+    //     throw 2
+    //   }
+    // )
+
+    //case 8  resolve/reject
+    // const p8_1 = MyPromise.resolve('p8_1')
+    // console.log(p8_1)
+
+    // const p8_2 = MyPromise.resolve(MyPromise.resolve('p8_2'))
+    // console.log(p8_2)
+
+    // const p8_3 = MyPromise.resolve(MyPromise.reject('fail reason'))
+    // console.log(p8_3)
+
+    // case 9 Race
+
+    const p9_1 = new MyPromise((res, rej) => {
+      setTimeout(() => {
+        console.log('p9_1')
+        res(1);
+      }, 2000);
+    })
+    const p9_2 = new MyPromise((res, rej) => {
+      setTimeout(() => {
+        console.log('p9_2')
+        res(2);
+
+      }, 1000);
+    })
+    const p9_3 = new MyPromise((res, rej) => {
+      setTimeout(() => {
+        console.log('p9_3')
+        res(3);
+
+      }, 3000);
+    })
+    const p9 = MyPromise.Race([p9_1, p9_2, p9_3]);
+    console.log(p9)
+  // 1: init MyPromise,  put a to Quee
+  // 2:
+
+    /**
+     * output     Micro Quee      Mis Quee
+     * init       a
+     *
+     *
+     */
+  </script>
+</head>
+
+<body>
+
+</body>
+
+</html>
